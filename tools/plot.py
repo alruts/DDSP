@@ -83,7 +83,7 @@ def magspec(
 
 def timeseries(
     amplitude_axes,
-    sample_rate = None,
+    samplerate = None,
     units="Amplitude",
     title=None,
     labels=None,
@@ -100,14 +100,14 @@ def timeseries(
     time_axes = []
     
     # plot with indices
-    if sample_rate is None:
+    if samplerate is None:
         for signal in amplitude_axes:
             time_axes.append(list(range(len(signal))))
             xlab = "Index (n)"
 
     else:
         for signal in amplitude_axes:
-            time_axes.append(np.array(range(len(signal)))/sample_rate)
+            time_axes.append(np.array(range(len(signal)))/samplerate)
             xlab = "Time (s)"
 
 

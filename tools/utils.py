@@ -99,7 +99,7 @@ def hanning_fade(signal, sampling_rate, fade_length_ms):
     return signal
 
 
-def get_spectrum(signal, sample_rate):
+def get_spectrum(signal, samplerate):
     """
     Returns:
         ndarray: Complex spectrum (one-sided).
@@ -109,7 +109,7 @@ def get_spectrum(signal, sample_rate):
     spectrum = fft(signal)
 
     # Compute the frequency axis
-    frequency = fftfreq(len(signal), d=1 / sample_rate)
+    frequency = fftfreq(len(signal), d=1 / samplerate)
 
     # Compute the one-sided spectrum
     spectrum_one_sided = spectrum[: len(signal) // 2 + 1]
