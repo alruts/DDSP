@@ -83,6 +83,7 @@ class GammaToneFilter(nn.Module):
 
     def forward(self, x):
         # Apply the gamma-tone filter to the input signal
+        x = torch.flip(x, dims=[-1])
         filtered_signal = F.conv1d(
             x,
             self.impulse_response.view(1, 1, -1),
