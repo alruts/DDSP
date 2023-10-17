@@ -25,7 +25,7 @@ class FIRFilter1DLinearPhaseI(nn.Module):
     """Implements a linear phase FIR type I filter as a torch module."""
 
     def __init__(self, num_taps):
-        super(FIRFilter1DLinearPhase, self).__init__()
+        super(FIRFilter1DLinearPhaseI, self).__init__()
         self.num_taps = num_taps
 
         # Only allow odd number of taps
@@ -118,38 +118,6 @@ class GammaToneFilterbank(nn.Module):
         return outputs
 
 
-class MyModel_v1(nn.Module):
-    """First model of trainable model"""
-
-    def __init__(self, num_taps, samplerate, center_frequencies, impairment_factor=1.0):
-        super(MyModel_v1, self).__init__()
-        self.num_taps = num_taps
-        self.samplerate = samplerate
-        self.center_frequencies = center_frequencies
-        self.impairent_factor = impairment_factor
-        self.duration = 0.25  # fixed at 1
-
-        self.normal_model = NormalModel(
-            sample_rate=sample_rate, center_frequencies=self.center_frequencies
-        )
-
-        self.impaired_model = ImpairedModel(
-            num_taps=self.num_taps,
-            samplerate=self.samplerate,
-            center_frequencies=self.center_frequencies,
-            impairment_factor=self.impairent_factor,
-        )
-
-    def forward(self, x):
-        out_HI = self.impaired_model(x)
-        out_NH = self.normal_model(x)
-        # Zero pad normal hearing to match HI
-        out_NH = F.pad(
-            input=out_NH, pad=[0, self.num_taps - 1], mode="constant", value=0
-        )
-        return out_NH, out_HI
-
-
 class ImpairedModel(nn.Module):
     """Impaired model"""
 
@@ -183,9 +151,9 @@ class ImpairedModel(nn.Module):
 class NormalModel(nn.Module):
     """Normal hearing model"""
 
-    def __init__(self, sample_rate, center_frequencies):
+    def __init__(self, samplerate, center_frequencies):
         super(NormalModel, self).__init__()
-        self.samplerate = sample_rate
+        self.samplerate = samplerate
         self.center_frequencies = center_frequencies
         self.duration = 0.25  # fixed
 
@@ -199,3 +167,35 @@ class NormalModel(nn.Module):
         for signal in signals:
             out += signal  # Sum outputs of filterbank
         return torch.div(out, torch.max(torch.abs(out)))
+
+
+class MyModel_v1(nn.Module):
+    """My model"""
+
+    def __init__(self, num_taps, samplerate, center_frequencies, impairment_factor=1.0):
+        super(MyModel_v1, self).__init__()
+        self.num_taps = num_taps
+        self.samplerate = samplerate
+        self.center_frequencies = center_frequencies
+        self.impairent_factor = impairment_factor
+        self.duration = 0.25  # fixed at 1
+
+        self.normal_model = NormalModel(
+            samplerate=samplerate, center_frequencies=self.center_frequencies
+        )
+
+        self.impaired_model = ImpairedModel(
+            num_taps=self.num_taps,
+            samplerate=self.samplerate,
+            center_frequencies=self.center_frequencies,
+            impairment_factor=self.impairent_factor,
+        )
+
+    def forward(self, x):
+        out_HI = self.impaired_model(x)
+        out_NH = self.normal_model(x)
+        # Zero pad normal hearing to match HI
+        out_NH = F.pad(
+            input=out_NH, pad=[0, self.num_taps - 1], mode="constant", value=0
+        )
+        return out_NH, out_HI
