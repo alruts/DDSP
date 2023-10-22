@@ -146,7 +146,7 @@ class ImpairedModel(nn.Module):
         for signal in signals:
             out += signal  # Sum outputs of filterbank
         # Normalize
-        return torch.div(out, torch.max(torch.abs(out)))
+        return torch.div(out, len(signals))
 
 
 class NormalModel(nn.Module):
@@ -167,7 +167,7 @@ class NormalModel(nn.Module):
         out = torch.zeros_like(signals[0])
         for signal in signals:
             out += signal  # Sum outputs of filterbank
-        return torch.div(out, torch.max(torch.abs(out)))
+        return torch.div(out, len(signals))
 
 
 class MyModel_v1(nn.Module):

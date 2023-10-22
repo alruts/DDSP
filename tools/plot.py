@@ -12,6 +12,7 @@ except:
 
 COLOR_PALETTE = "hls"
 FONT_SIZE = 12
+ALPHA = 0.7
 
 
 def magspec(
@@ -59,7 +60,7 @@ def magspec(
         magnitude = get_mag(spec, mode=mode)
 
         # Plot the magnitude spectrum on the left y-axis
-        lines += ax.plot(frq, magnitude, color=colors[ii], label=labels[ii], alpha=1.0)
+        lines += ax.plot(frq, magnitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
 
         try:
             # Set legend
@@ -135,7 +136,7 @@ def timeseries(
         ax.margins(x=0)
 
         # Plot the time signal
-        lines += ax.plot(t, amplitude, color=colors[ii], label=labels[ii], alpha=1.0)
+        lines += ax.plot(t, amplitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
 
         try:
             # Set legend
