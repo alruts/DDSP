@@ -1,0 +1,5 @@
+Wiener filter actually had a SI-SDR of -3.9272 dB
+
+Trained filter had approx -45 dB
+
+Both with 201 taps
