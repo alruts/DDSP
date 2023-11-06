@@ -92,10 +92,8 @@ def magspec_anim(
     units="dB",
     title=None,
     labels=None,
-    out_path=None,
     mode="db",
     colors=None,
-    format="png",
     font_size=FONT_SIZE,
     xlim=[20, 20e3],
     xticks = [20, 50, 100, 1e3, 10e3, 20e3],
@@ -121,39 +119,34 @@ def magspec_anim(
 
     for ii, (frq, spec) in enumerate(zip(freq_axes, spec_axes)):
         # Magnitude axis
-        ax[0].set_xscale("log")
-        ax[0].set_xlabel("Frequency (Hz)")
-        ax[0].set_ylabel(units)
-        ax[0].xaxis.grid(True, which="both", ls="--")
-        ax[0].yaxis.grid(True)
-        ax[0].margins(x=0)
+        ax.set_xscale("log")
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel(units)
+        ax.xaxis.grid(True, which="both", ls="--")
+        ax.yaxis.grid(True)
+        ax.margins(x=0)
 
         # Calculate magnitude and phase
         magnitude = get_mag(spec, mode=mode)
 
         # Plot the magnitude spectrum on the left y-axis
-        lines += ax[0].plot(frq, magnitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
+        lines += ax.plot(frq, magnitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
 
-    # try:
-    #     # Set legend
-    #     plt.legend(loc="best")
-    # except: pass
+    try:
+        # Set legend
+        plt.legend(loc="best")
+    except: pass
 
-    ax[0].set_xticks(
+    ax.set_xticks(
         xticks,
         [float2metric(x,precision=0) for x in xticks],
     )
-    ax[0].set_xlim(xlim)
+    ax.set_xlim(xlim)
 
-    # if title is not None:
-    #     plt.title(title)
-
-    # if out_path == None:
-    #     plt.show()
-    # else:
-    #     print(f"saving figure to {out_path} as {format}")
-    #     plt.savefig(f"{out_path}", format=format, bbox_inches="tight", dpi=300)
-
+    if title is not None:
+        plt.title(title)
+    
+    return lines
 
 def mag_phase(
     freq_axes,
