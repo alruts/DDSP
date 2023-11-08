@@ -14,6 +14,8 @@ from numpy import (
     cos,
     arange,
     exp,
+    interp,
+    linspace,
 )
 from numpy.fft import fft, fftfreq, ifft
 
@@ -157,11 +159,31 @@ def get_magphase(complex_spectrum, mode="db"):
     return mag, phase
 
 
-def gamma_tone_ir(duration_sec, fc_hz, fs_hz, impairment_factor=0):
-    n = 4  # filter order
+def linear_interpolate(shorter_array, longer_array):
+    """
+    Linearly interpolate a shorter array to match the length of a longer array.
+
+    Parameters:
+        shorter_array (numpy.ndarray): The shorter array for interpolation.
+        longer_array (numpy.ndarray): The longer array for interpolation.
+
+    Returns:
+        numpy.ndarray: The interpolated shorter array.
+    """
+    interpolated_shorter_array = interp(
+        linspace(0, 1, len(longer_array)),
+        linspace(0, 1, len(shorter_array)),
+        shorter_array,
+    )
+
+    return interpolated_shorter_array
+
+
+def gamma_tone_ir(duration_sec, fc_hz, fs_hz):
+    n = 4  # filter orderz
     phi_rad = 0  # initial phase
 
-    ERB = 24.7 + 0.108 * fc_hz + impairment_factor
+    ERB = 24.7 + 0.108 * fc_hz
     b = 1.018 * ERB
     a = 6 / (-2 * pi * b) ** 4
     t_sec = arange(duration_sec * fs_hz) / fs_hz

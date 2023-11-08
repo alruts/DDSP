@@ -1,7 +1,0 @@
-{
-    "delta_q": 5,
-    "taps": 4,
-    "epochs": 1200,
-    "window_size": 512,
-    "overlap": 0.5
-}

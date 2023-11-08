@@ -96,6 +96,7 @@ def magspec_anim(
     colors=None,
     font_size=FONT_SIZE,
     xlim=[20, 20e3],
+    ylim = None,
     xticks = [20, 50, 100, 1e3, 10e3, 20e3],
 ):
     plt.rcParams.update({"font.size": font_size})
@@ -142,6 +143,9 @@ def magspec_anim(
         [float2metric(x,precision=0) for x in xticks],
     )
     ax.set_xlim(xlim)
+    
+    if ylim is not None:
+        ax.set_ylim(ylim)
 
     if title is not None:
         plt.title(title)

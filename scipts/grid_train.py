@@ -9,7 +9,6 @@ import torch
 import torch.optim as optim
 import torchaudio
 from scipy import signal
-from scipy.linalg import toeplitz
 from tqdm import tqdm
 
 print(torch.__version__)
@@ -27,7 +26,10 @@ torch.manual_seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+from tools.losses import l2_stft_loss as criterion
 
+
+# Helper functions
 def save_dict_to_json(data, filename):
     """
     Save a dictionary to a JSON file.
@@ -47,25 +49,15 @@ def save_list_as_pickle(filename, data):
         pickle.dump(data, file)
 
 
-
-
-def xcorr(x, y, k):
-    N = min(len(x), len(y))
-    r_xy = (1 / N) * signal.correlate(
-        x, y, "full"
-    )  # reference implementation is unscaled
-    return r_xy[N - k - 1 : N + k]
-
-
 def batch_2_np(batch):
     return batch[0][0].detach().numpy()
 
 
 # signal params
-samplerate = 22050
+samplerate = int(8e3)
 center_frequencies = [1000]
 n_batch = 1
-n_samples = 22050
+n_samples = int(8e3)
 n_channels = 1
 
 signal_type = "noise_pulse"
@@ -86,21 +78,25 @@ if signal_type == "speech":
     print("Training using single speech signal")
 elif signal_type == "noise_pulse":
     x_noise = torch.randn(n_batch, n_channels, n_samples)
-    x_noise[:, :, 10000:] = 0.0
+    x_noise[:, :, n_samples // 2 :] = 0.0
     print("Training using single noise pulse signal")
 
 # model params
-delta_q = 5
-taps_it = [4, 8, 16, 32, 64, 128, 256, 512]
+band_width_factor = 5
+taps_it = [16, 32, 64, 128, 256, 512, 1024]
+# taps_it = [128]
+
+data_path = "data2" # master folder
 
 # training params
-epochs = 1200
-n_window_it = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096]
+epochs = 20_000
+n_window_it = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
+# n_window_it = [64]
 overlap = 0.5
 
 models_to_train = len(n_window_it) * len(taps_it)
 curr_model = 1
-
+# %%
 for taps in taps_it:
     for n_window in n_window_it:
         print(f"Training model {curr_model} / {models_to_train}")
@@ -111,11 +107,11 @@ for taps in taps_it:
             gamma_numtaps=128,
             samplerate=samplerate,
             center_frequencies=center_frequencies,
-            band_width_factor=delta_q,
+            band_width_factor=band_width_factor,
         )
 
         model_params = {
-            "delta_q": delta_q,
+            "band_width_factor": band_width_factor,
             "taps": taps,
             "epochs": epochs,
             "window_size": n_window,
@@ -123,7 +119,6 @@ for taps in taps_it:
         }
 
         # % Create folders to save data
-        data_path = "data2"
         f_path = os.path.join(data_path, f"taps_{taps}_winsize_{n_window}")
         audio_path = os.path.join(f_path, "01_audio")
         figs_path = os.path.join(f_path, "02_figs")
@@ -149,7 +144,6 @@ for taps in taps_it:
         input_data = x_noise  # use noise
 
         optimizer = optim.Adam(model.parameters(), lr=0.001)
-
         loss_curve = []
 
         for epoch in tqdm(
@@ -159,7 +153,7 @@ for taps in taps_it:
         ):
             # Forward pass and compute loss
             out_NH, out_HI = model(input_data)
-            loss = abs_stft_loss(out_NH, out_HI, n_fft=n_window, overlap=overlap)
+            loss = criterion(out_NH, out_HI, n_fft=n_window, overlap=overlap)
 
             # Backward pass and optimize
             optimizer.zero_grad()
@@ -188,7 +182,6 @@ for taps in taps_it:
         )
 
         # save plots in /plots
-
         freq_axes = []
         spec_axes = []
         time_signals = []
@@ -198,52 +191,31 @@ for taps in taps_it:
             freq_axes.append(f)
             spec_axes.append(h)
             time_signals.append(filter.b)
+
         for filter in model.impaired_model.gamma_bank.filters:
             h, f = utils.get_spectrum(filter.b, samplerate=samplerate)
             freq_axes.append(f)
             spec_axes.append(h)
             time_signals.append(filter.b)
 
-        for filternh, filterhi in zip(
-            model.normal_model.gamma_bank.filters,
-            model.impaired_model.gamma_bank.filters,
-        ):
-            hnh, f = utils.get_spectrum(
-                filternh.b, samplerate=samplerate
-            )
-            hhi, f = utils.get_spectrum(
-                filterhi.b, samplerate=samplerate
-            )
-            h = hnh / hhi
-            freq_axes.append(f)
-            spec_axes.append(h)
-            time_signals.append(filter.b)
+        n_fft = len(f)
 
         # get learned FIR coefficients
         coeffs = model.hearing_aid_model.filter_taps.detach().numpy()
-        w, h = signal.freqz(coeffs)
+        w, h = signal.freqz(coeffs, worN=n_fft)
         freq_axes.append(w / (2 * pi) * samplerate)
         spec_axes.append(h / max(h))
 
-        # Get Wiener filter for comparison
-        L = taps
-        x_ = batch_2_np(model.impaired_model.gamma_bank(input_data)[0])
-        s = batch_2_np(model.normal_model.gamma_bank(input_data)[0])
-        r_xx = xcorr(x_, x_, L - 1)
-        R_xx = toeplitz(r_xx[L - 1 :])
-        r_sx = xcorr(s, x_, L - 1)
-        theta = np.linalg.solve(R_xx, r_sx[L - 1 :])
-        w, h = signal.freqz(theta)
-
-        freq_axes.append(w / (2 * pi) * samplerate)
-        spec_axes.append(h)
+        spec_axes.append(
+            spec_axes[1] * spec_axes[2]
+        )  # compensation filter multiplied with impaired filter
+        freq_axes.append(f)  # compensation filter multiplied with impaired filter
 
         labels = [
             "Normal Hearing",
             "Impaired Hearing",
-            "Ideal",
             "Compensation filter",
-            "Wiener filter",
+            "Result",
         ]
 
         # Plot IR in time-domain and magnitude repsonse
@@ -252,6 +224,7 @@ for taps in taps_it:
             spec_axes=spec_axes,
             labels=labels,
             out_path=os.path.join(figs_path, "freq_responses.png"),
+            mode="dB",
         )
         # save data as pickle
         save_list_as_pickle(
@@ -263,11 +236,124 @@ for taps in taps_it:
 
         # plot loss_curve
         plot.timeseries(
-            amplitude_axes=[loss_curve],
+            amplitude_axes=[20 * np.log10(loss_curve)],
             out_path=os.path.join(figs_path, "loss_curve.png"),
-            units="Loss",
+            units="Loss (dB)",
         )
         # save data as pickle
         save_list_as_pickle(
             filename=os.path.join(f_path, "loss_curve.pkl"), data=loss_curve
         )
+
+# %% make animations
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import os, sys
+
+sys.path.insert(0, os.path.abspath(os.path.join("..")))
+from tools import plot, utils
+
+# Fixed number of taps
+import os
+import pickle
+
+# Define the root directory where your folder structure is located
+root_directory = data_path
+
+# Create a dictionary to organize the loaded data
+data_dict = {}
+
+# Recursively traverse the folder structure
+for root, dirs, files in os.walk(root_directory):
+    for file in files:
+        if file == 'freq_axes.pkl':
+            # Extract taps and winsizes from the folder name
+            folder_name = os.path.basename(root)
+            taps, winsize = folder_name.split('_')[1], folder_name.split('_')[3]
+            taps = int(taps)
+            winsize = int(winsize)
+
+            if taps not in data_dict:
+                data_dict[taps] = {}
+
+            if winsize not in data_dict[taps]:
+                data_dict[taps][winsize] = {}
+
+            # Load freq_axes.pkl
+            with open(os.path.join(root, file), 'rb') as f:
+                data_dict[taps][winsize]['freq_axes'] = pickle.load(f)
+
+        elif file == 'spec_axes.pkl':
+            # Load spec_axes.pkl
+            with open(os.path.join(root, file), 'rb') as f:
+                data_dict[taps][winsize]['spec_axes'] = pickle.load(f)
+
+for taps in taps_it:
+    # List of win_sizes for which you want to create the animation
+    win_sizes = n_window_it  # Add more win_sizes as needed
+
+    # Create a figure and axes outside the update function
+    fig, ax = plt.subplots(1, 1)
+
+    # Create a function to update the plot for each frame of the animation
+    def update(frame):
+        # Clear the current plot
+        ax.clear()
+        # Get the data for the current win_size
+        win_size = win_sizes[frame]
+        freq_axes_data = data_dict[taps][win_size]["freq_axes"]
+        spec_axes_data = data_dict[taps][win_size]["spec_axes"]
+
+        # reset axes
+        freq_axes = []
+        spec_axes = []
+
+        # Axes order: [0] "Normal Hearing",
+        # [1] "Impaired Hearing",
+        # [2] "Ideal",
+        # [3] "Compensation filter",
+        # [4] "Wiener filter",
+
+        freq_axes.append(freq_axes_data[0])
+        freq_axes.append(freq_axes_data[1])
+        freq_axes.append(freq_axes_data[3])
+        freq_axes.append(freq_axes_data[0])
+
+        spec_axes.append(spec_axes_data[0])
+        spec_axes.append(spec_axes_data[1])
+        spec_axes.append(spec_axes_data[3])
+        spec_axes.append(
+            utils.linear_interpolate(spec_axes_data[3], spec_axes_data[1])
+            * spec_axes_data[1]
+        )  # compensation filter multiplied with impaired filter
+
+        labels = [
+            "Normal Hearing",
+            "Impaired Hearing",
+            "Compensation filter",
+            "Result",
+        ]
+
+        # Plot the data (customize this according to your data structure)
+        plot.magspec_anim(
+            ax=ax,
+            freq_axes=freq_axes,
+            spec_axes=spec_axes,
+            units="dB",
+            ylim = [-100, 0],
+            title=f"Windows: {win_size / samplerate * (1-overlap)**-1 * 1000} msec, Taps: {taps}",
+            labels=labels,
+        )
+
+    # Create a figure and an animation
+    ani = animation.FuncAnimation(
+        fig, update, frames=len(win_sizes), repeat=True, blit=False
+    )
+    # Define the filename and format for saving the animation
+    save_filename = f"taps_{taps}.mp4"  # Change the filename and format as needed
+    save_filename = os.path.join(data_path, f"taps_{taps}.mp4")
+
+    # Save the animation as a video file (e.g., MP4)
+    ani.save(
+        save_filename, writer="ffmpeg"
+    )  # You may need to install FFmpeg for this to work

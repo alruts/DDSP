@@ -1,7 +1,7 @@
 {
-    "delta_q": 5,
+    "band_width_factor": 5,
     "taps": 16,
-    "epochs": 1200,
+    "epochs": 20000,
     "window_size": 512,
     "overlap": 0.5
 }
