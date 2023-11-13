@@ -85,11 +85,12 @@ def magspec(
         plt.savefig(f"{out_path}", format=format, bbox_inches="tight", dpi=300)
 
 
-def magspec_anim(
+def spec_anim(
     ax,
     freq_axes,
     spec_axes,
     units="dB",
+    plot_phase = False,
     title=None,
     labels=None,
     mode="db",
@@ -126,6 +127,14 @@ def magspec_anim(
         ax.xaxis.grid(True, which="both", ls="--")
         ax.yaxis.grid(True)
         ax.margins(x=0)
+        
+        # Phase axis setup
+        if plot_phase:
+            ax2 = ax.twinx()
+            ax2.set_xscale("log")
+            ax2.set_ylabel("Phase (degrees)")
+            ax2.margins(x=0)
+            ax2.set_yticks([i for i in range(-1080, 1081, 90)])
 
         # Calculate magnitude and phase
         magnitude = get_mag(spec, mode=mode)
@@ -133,6 +142,11 @@ def magspec_anim(
         # Plot the magnitude spectrum on the left y-axis
         lines += ax.plot(frq, magnitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
 
+        if plot_phase:
+            phase = get_phase_deg(spec)
+
+            # Plot the phase spectrum on the right y-axis
+            lines += ax2.plot(frq, phase, ':', color=colors[ii], alpha=ALPHA)
     try:
         # Set legend
         plt.legend(loc="best")
@@ -285,6 +299,78 @@ def timeseries(
 
         # Plot the time signal
         lines += ax.plot(t, amplitude, color=colors[ii], label=labels[ii], alpha=ALPHA)
+
+    try:
+        # Set legend
+        plt.legend(loc="best")
+    except: pass
+
+    plt.xlim(xlim)
+
+    if title is not None:
+        plt.title(title)
+
+    if out_path == None:
+        plt.show()
+    else:
+        print(f"saving figure to {out_path} as {format}")
+        plt.savefig(f"{out_path}", format=format, bbox_inches="tight", dpi=300)
+
+def filter_taps(
+    amplitude_axes,
+    samplerate = None,
+    units="Amplitude",
+    title=None,
+    labels=None,
+    out_path=None,
+    colors=None,
+    xlim=None,
+    format="png",
+    font_size=FONT_SIZE,
+):
+    plt.rcParams.update({"font.size": font_size})
+
+    # number of signals to plot
+    n_signals = len(amplitude_axes)
+    time_axes = []
+    
+    # plot with indices
+    if samplerate is None:
+        for signal in amplitude_axes:
+            time_axes.append(list(range(len(signal))))
+            xlab = "Index (n)"
+
+    else:
+        for signal in amplitude_axes:
+            time_axes.append(np.array(range(len(signal)))/samplerate)
+            xlab = "Time (s)"
+
+
+    # fill with empty strings
+    if labels is None:
+        labels = []
+        for _ in range(n_signals):
+            labels.append("")
+
+    # fill with auto color palette
+    if colors is None:
+        colors = sns.color_palette(COLOR_PALETTE, n_colors=n_signals)
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    lines = []
+
+    for ii, (t, amplitude) in enumerate(zip(time_axes, amplitude_axes)):
+        # Magnitude axis
+        ax.set_xscale("linear")
+        ax.set_xlabel(xlab)
+        ax.set_ylabel(units)
+        ax.xaxis.grid(True, which="both", ls="--")
+        ax.yaxis.grid(True)
+        ax.margins(x=0)
+
+        # Plot the time signal
+        lines += ax.stem(t, amplitude, label=labels[ii])
 
     try:
         # Set legend

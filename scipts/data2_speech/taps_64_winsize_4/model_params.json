@@ -1,0 +1,7 @@
+{
+    "band_width_factor": 5,
+    "taps": 64,
+    "epochs": 20000,
+    "window_size": 4,
+    "overlap": 0.5
+}

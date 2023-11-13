@@ -53,7 +53,7 @@ def batch_2_np(batch):
     return batch[0][0].detach().numpy()
 
 
-# signal params
+# *signal params
 samplerate = int(8e3)
 center_frequencies = [1000]
 n_batch = 1
@@ -75,18 +75,21 @@ if signal_type == "speech":
     audio, samplerate = torchaudio.load(r"..\audio\examples\Human_voice\1.wav")
     n_channels, n_samples = audio.shape
     audio = audio.reshape((n_batch, n_channels, n_samples))
+    x = audio
     print("Training using single speech signal")
 elif signal_type == "noise_pulse":
     x_noise = torch.randn(n_batch, n_channels, n_samples)
     x_noise[:, :, n_samples // 2 :] = 0.0
+    x = x_noise
     print("Training using single noise pulse signal")
 
-# model params
+# *model params
 band_width_factor = 5
 taps_it = [16, 32, 64, 128, 256, 512, 1024]
 # taps_it = [128]
 
-data_path = "data2" # master folder
+# *Change destination path as needed
+data_path = "data2_speech"
 
 # training params
 epochs = 20_000
@@ -95,12 +98,12 @@ n_window_it = [4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192]
 overlap = 0.5
 
 models_to_train = len(n_window_it) * len(taps_it)
-curr_model = 1
+model_idx = 1 # init counter
 # %%
 for taps in taps_it:
     for n_window in n_window_it:
-        print(f"Training model {curr_model} / {models_to_train}")
-        curr_model += 1
+        print(f"Training model {model_idx} / {models_to_train}")
+        model_idx += 1
 
         model = MyModel_v2(
             fir_numtaps=taps,
@@ -141,7 +144,7 @@ for taps in taps_it:
         save_dict_to_json(signal_params, os.path.join(f_path, "signal_params.json"))
 
         # % Train model with specific loss and data
-        input_data = x_noise  # use noise
+        input_data = x  # use noise
 
         optimizer = optim.Adam(model.parameters(), lr=0.001)
         loss_curve = []
@@ -159,15 +162,17 @@ for taps in taps_it:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # append to loss
+            
+            # Update loss curve
             loss_curve.append(loss.item())
 
-        # inference on model one last time
+        # Inference model one last time
         out_NH, out_HI = model(input_data)
 
         # save audio data in /audio
         audio = batch_2_np(out_HI)  # convert to np
         audio = audio / max(np.abs(audio))  # normalize
+        
         sf.write(
             file=os.path.join(audio_path, "HI_out.wav"),
             data=audio,
@@ -181,7 +186,7 @@ for taps in taps_it:
             samplerate=samplerate,
         )
 
-        # save plots in /plots
+        # * save plots in /plots
         freq_axes = []
         spec_axes = []
         time_signals = []
@@ -208,8 +213,8 @@ for taps in taps_it:
 
         spec_axes.append(
             spec_axes[1] * spec_axes[2]
-        )  # compensation filter multiplied with impaired filter
-        freq_axes.append(f)  # compensation filter multiplied with impaired filter
+        )  # compensation spectrum multiplied with impaired spectrum
+        freq_axes.append(f)
 
         labels = [
             "Normal Hearing",
@@ -226,7 +231,12 @@ for taps in taps_it:
             out_path=os.path.join(figs_path, "freq_responses.png"),
             mode="dB",
         )
-        # save data as pickle
+        plot.filter_taps(
+            amplitude_axes=[model.hearing_aid_model.filter_taps.detach().numpy()],
+            out_path=os.path.join(figs_path, "filter_taps.png"),
+            # units="Loss (dB)",
+        )
+        # * save metadata as pickle
         save_list_as_pickle(
             filename=os.path.join(f_path, "freq_axes.pkl"), data=freq_axes
         )
@@ -266,10 +276,10 @@ data_dict = {}
 # Recursively traverse the folder structure
 for root, dirs, files in os.walk(root_directory):
     for file in files:
-        if file == 'freq_axes.pkl':
+        if file == "freq_axes.pkl":
             # Extract taps and winsizes from the folder name
             folder_name = os.path.basename(root)
-            taps, winsize = folder_name.split('_')[1], folder_name.split('_')[3]
+            taps, winsize = folder_name.split("_")[1], folder_name.split("_")[3]
             taps = int(taps)
             winsize = int(winsize)
 
@@ -280,17 +290,17 @@ for root, dirs, files in os.walk(root_directory):
                 data_dict[taps][winsize] = {}
 
             # Load freq_axes.pkl
-            with open(os.path.join(root, file), 'rb') as f:
-                data_dict[taps][winsize]['freq_axes'] = pickle.load(f)
+            with open(os.path.join(root, file), "rb") as f:
+                data_dict[taps][winsize]["freq_axes"] = pickle.load(f)
 
-        elif file == 'spec_axes.pkl':
+        elif file == "spec_axes.pkl":
             # Load spec_axes.pkl
-            with open(os.path.join(root, file), 'rb') as f:
-                data_dict[taps][winsize]['spec_axes'] = pickle.load(f)
+            with open(os.path.join(root, file), "rb") as f:
+                data_dict[taps][winsize]["spec_axes"] = pickle.load(f)
 
 for taps in taps_it:
     # List of win_sizes for which you want to create the animation
-    win_sizes = n_window_it  # Add more win_sizes as needed
+    win_sizes = n_window_it
 
     # Create a figure and axes outside the update function
     fig, ax = plt.subplots(1, 1)
@@ -298,7 +308,9 @@ for taps in taps_it:
     # Create a function to update the plot for each frame of the animation
     def update(frame):
         # Clear the current plot
-        ax.clear()
+        try:
+            ax.clear()
+        except: pass
         # Get the data for the current win_size
         win_size = win_sizes[frame]
         freq_axes_data = data_dict[taps][win_size]["freq_axes"]
@@ -335,12 +347,13 @@ for taps in taps_it:
         ]
 
         # Plot the data (customize this according to your data structure)
-        plot.magspec_anim(
+        plot.spec_anim(
             ax=ax,
             freq_axes=freq_axes,
             spec_axes=spec_axes,
+            plot_phase=False,
             units="dB",
-            ylim = [-100, 0],
+            ylim=[-100, 0],
             title=f"Windows: {win_size / samplerate * (1-overlap)**-1 * 1000} msec, Taps: {taps}",
             labels=labels,
         )
@@ -354,6 +367,7 @@ for taps in taps_it:
     save_filename = os.path.join(data_path, f"taps_{taps}.mp4")
 
     # Save the animation as a video file (e.g., MP4)
+    print(f"Saving {save_filename} with ffmpeg")
     ani.save(
         save_filename, writer="ffmpeg"
     )  # You may need to install FFmpeg for this to work

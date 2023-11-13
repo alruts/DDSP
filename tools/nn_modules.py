@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchaudio.transforms import FFTConvolve
 from math import pi
 
 import numpy as np
@@ -17,6 +18,33 @@ def _hz_to_erb(hz):
     EarQ = 9.26449
     minBW = 24.7
     return hz / EarQ + minBW
+
+
+def fft_conv(x: torch.Tensor, h: torch.Tensor) -> torch.Tensor:
+    """FFT conv in PyTorch. This impementation is fully equivalent to linear conv
+
+    Args:
+        x (torch.tensor): signal to convolve with filter kernel of shape (Batch, Channels, N)
+        h (torch.tensor): filter kernel to convolve with signal of shape (Batch, Channels, L)
+
+    Returns:
+        torch.tensor: convolution of x and h of shape (Batch, Channels, M = N + L - 1)
+    """
+
+    _, _, N = x.shape
+    _, _, L = h.shape
+    M = N + L - 1
+
+    x_pad = F.pad(x, (0, M - N), mode="constant")
+    h_pad = F.pad(h, (0, M - L), mode="constant")
+
+    X = torch.fft.fft(x_pad)
+    H = torch.fft.fft(h_pad)
+
+    Y = X * H
+    y = torch.fft.ifft(Y).real
+
+    return y
 
 
 def design_gammatone(
@@ -92,10 +120,9 @@ class FIRFilter1D(nn.Module):
 
     def forward(self, x):
         # FIR filter implemented with a conv1d layer
-        filtered_signal = F.conv1d(
+        filtered_signal = fft_conv(
             x,
             self.filter_taps.view(1, 1, -1),
-            padding=self.num_taps - 1,  # bias=False
         )
         return filtered_signal
 
@@ -122,12 +149,10 @@ class FIRFilter1DLinearPhaseI(nn.Module):
         )  # Mirror learnable taps for symmetry
         self.filter_taps = torch.cat([mirrored_taps, self.learnable_taps])
         # Apply the FIR filter operation with a conv1d layer
-        filtered_signal = torch.conv1d(
+        filtered_signal = fft_conv(
             x,
             self.filter_taps.view(1, 1, -1),
-            padding=self.num_taps - 1,  # bias=False
         )
-
         return filtered_signal
 
 
@@ -166,13 +191,11 @@ class GammatoneFilter(nn.Module):
 
     def forward(self, x):
         # Apply the gamma-tone filter to the input signal
-        x = torch.flip(x, dims=[-1])
-        filtered_signal = F.conv1d(
+        filtered_signal = fft_conv(
             x,
             self.b.view(1, 1, -1),
-            padding=self.numtaps - 1,
         )
-        return torch.flip(filtered_signal, dims=[-1])
+        return filtered_signal
 
 
 class GammatoneFilterbank(nn.Module):
@@ -220,7 +243,12 @@ class HearingModel(nn.Module):
     """Hearing model"""
 
     def __init__(
-        self, center_frequencies, samplerate, ftype, gamma_numtaps, band_width_factor=1.0
+        self,
+        center_frequencies,
+        samplerate,
+        ftype,
+        gamma_numtaps,
+        band_width_factor=1.0,
     ):
         """
         Args:
@@ -256,7 +284,14 @@ class HearingModel(nn.Module):
 class MyModel_v2(nn.Module):
     """My model"""
 
-    def __init__(self, fir_numtaps, samplerate, center_frequencies, gamma_numtaps,band_width_factor=5.0):
+    def __init__(
+        self,
+        fir_numtaps,
+        samplerate,
+        center_frequencies,
+        gamma_numtaps,
+        band_width_factor=5.0,
+    ):
         """This model uses
         Args:
             num_taps (int): number of taps for the FIR filter
