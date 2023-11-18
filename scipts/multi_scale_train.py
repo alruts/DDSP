@@ -85,168 +85,201 @@ elif signal_type == "noise_pulse":
 
 # *model params
 band_width_factor = 5
-taps_it = [16, 32, 64, 128, 256, 512, 1024]
+taps_it = [16, 32, 64, 128, 256]
 # taps_it = [128]
 
-# *Change destination path as needed
-data_path = "logl2_multiscale_noise"
+# * Losses to try
+loss_type = ["L2", "COSINE"]
+num_experiments = 5
+mag_weight =        [1.0, 0.0, 0.0, 0.0, 0.0, 1.0] # magnitude
+delta_time_weight = [0.0, 1.0, 0.0, 0.0, 0.0, 0.0] # time bin derivative loss
+delta_freq_weight = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0] # frequency bin derivative loss
+cumsum_freq_weight =[0.0, 0.0, 0.0, 1.0, 0.0, 1.0] # frequency bin integral loss 
+logmag_weight =     [0.0, 0.0, 0.0, 0.0, 1.0, 0.0] # log magnitude
+loudness_weight =   [0.0, 0.0, 0.0, 0.0, 0.0, 0.0] # perceptual loudness loss
 
-# training params
-epochs = 40_000
-overlap = 0.5 # 50% overlap
+for lt in loss_type:
+    for experiment in range(num_experiments):
+        print(f"experiment: {experiment+1} / {num_experiments}")
+        # * Loss params
+        loss_params = {
+            "loss_type": lt,
+            "overlap": 0.5,  # 50% 
+            "mag_weight": mag_weight[experiment], # magnitude
+            "delta_time_weight": delta_time_weight[experiment], # time bin derivative loss
+            "delta_freq_weight": delta_freq_weight[experiment], # frequency bin derivative loss
+            "cumsum_freq_weight": cumsum_freq_weight[experiment], # frequency bin integral loss 
+            "logmag_weight": logmag_weight[experiment], # log magnitude
+            "loudness_weight": loudness_weight[experiment], # perceptual loudness loss
+        }
+        data_path = ""
+        for param in loss_params:
+            if param == "loss_type":
+                data_path += param
+                data_path += "_"
+                data_path += loss_params[param]
+                data_path += "_"
+            elif loss_params[param] > 0:
+                data_path += param
+                data_path += "_"
+                data_path += str(loss_params[param])
+                data_path += "_"
 
-models_to_train = len(taps_it)
-model_idx = 1 # init counter
-# %%
-for taps in taps_it:
-    print(f"Training model {model_idx} / {models_to_train}")
-    model_idx += 1 # increment counter
+        # *Change destination path as needed
 
-    model = MyModel_v2(
-        fir_numtaps=taps,
-        gamma_numtaps=128,
-        samplerate=samplerate,
-        center_frequencies=center_frequencies,
-        band_width_factor=band_width_factor,
-    )
+        # training params
+        epochs = 40_000
 
-    model_params = {
-        "band_width_factor": band_width_factor,
-        "taps": taps,
-        "epochs": epochs,
-        "overlap": overlap,
-    }
+        models_to_train = len(taps_it)
+        model_idx = 1  # init counter
 
-    # % Create folders to save data
-    f_path = os.path.join(data_path, f"taps_{taps}_multiscale")
-    audio_path = os.path.join(f_path, "01_audio")
-    figs_path = os.path.join(f_path, "02_figs")
+        for taps in taps_it:
+            print(f"Training model {model_idx} / {models_to_train}")
+            model_idx += 1  # increment counter
 
-    paths = [
-        data_path,
-        f_path,
-        audio_path,
-        figs_path,
-    ]
+            model = MyModel_v2(
+                fir_numtaps=taps,
+                gamma_numtaps=128,
+                samplerate=samplerate,
+                center_frequencies=center_frequencies,
+                band_width_factor=band_width_factor,
+            )
 
-    for path in paths:
-        # Check if the directory exists, and if not, create it
-        if not os.path.exists(path):
-            os.makedirs(path)
-            print(f"Directory created: {path}")
+            model_params = {
+                "band_width_factor": band_width_factor,
+                "taps": taps,
+                "epochs": epochs,
+            }
 
-    # save all the metadata
-    save_dict_to_json(model_params, os.path.join(f_path, "model_params.json"))
-    save_dict_to_json(signal_params, os.path.join(f_path, "signal_params.json"))
+            # % Create folders to save data
+            f_path = os.path.join(data_path, f"taps_{taps}_multiscale")
+            audio_path = os.path.join(f_path, "01_audio")
+            figs_path = os.path.join(f_path, "02_figs")
 
-    # % Train model with specific loss and data
-    input_data = x  # use noise
+            paths = [
+                data_path,
+                f_path,
+                audio_path,
+                figs_path,
+            ]
 
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
-    loss_curve = []
+            for path in paths:
+                # Check if the directory exists, and if not, create it
+                if not os.path.exists(path):
+                    os.makedirs(path)
+                    print(f"Directory created: {path}")
 
-    for epoch in tqdm(
-        range(epochs),
-        desc=f"Training (taps {taps})",
-        unit="epoch",
-    ):
-        # Forward pass and compute loss
-        out_NH, out_HI = model(input_data)
-        loss = criterion(out_NH, out_HI, overlap=overlap, loss_type='L2', logmag_weight=1.0, mag_weight=0.0)
+            # save all the metadata
+            save_dict_to_json(model_params, os.path.join(f_path, "model_params.json"))
+            save_dict_to_json(signal_params, os.path.join(f_path, "signal_params.json"))
+            save_dict_to_json(loss_params, os.path.join(f_path, "loss_params.json"))
 
-        # Backward pass and optimize
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        
-        # Update loss curve
-        loss_curve.append(loss.item())
+            # % Train model with specific loss and data
+            input_data = x  # use noise
 
-    # Inference model one last time
-    out_NH, out_HI = model(input_data)
+            optimizer = optim.Adam(model.parameters(), lr=0.001)
+            loss_curve = []
 
-    # save audio data in /audio
-    audio = batch_2_np(out_HI)  # convert to np
-    audio = audio / max(np.abs(audio))  # normalize
-    
-    sf.write(
-        file=os.path.join(audio_path, "HI_out.wav"),
-        data=audio,
-        samplerate=samplerate,
-    )
-    audio = batch_2_np(out_NH)  # convert to np
-    audio = audio / max(np.abs(audio))  # normalize
-    sf.write(
-        file=os.path.join(audio_path, "NH_out.wav"),
-        data=audio,
-        samplerate=samplerate,
-    )
+            for epoch in tqdm(
+                range(epochs),
+                desc=f"Training (taps {taps})",
+                unit="epoch",
+            ):
+                # Forward pass and compute loss
+                out_NH, out_HI = model(input_data)
+                loss = criterion(out_NH, out_HI, **loss_params)
 
-    # * save plots in /plots
-    freq_axes = []
-    spec_axes = []
-    time_signals = []
+                # Update loss curve
+                loss_curve.append(loss.item())
+                
+                # Backward pass and optimize
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
 
-    for filter in model.normal_model.gamma_bank.filters:
-        h, f = utils.get_spectrum(filter.b, samplerate=samplerate)
-        freq_axes.append(f)
-        spec_axes.append(h)
-        time_signals.append(filter.b)
 
-    for filter in model.impaired_model.gamma_bank.filters:
-        h, f = utils.get_spectrum(filter.b, samplerate=samplerate)
-        freq_axes.append(f)
-        spec_axes.append(h)
-        time_signals.append(filter.b)
+            # * save data  ----------------------------------------------
+            # Inference model one last time
+            out_NH, out_HI = model(input_data)
 
-    n_fft = len(f)
+            # save audio data in /audio
+            audio = batch_2_np(out_HI)  # convert to np
+            audio = audio / max(np.abs(audio))  # normalize
 
-    # get learned FIR coefficients
-    coeffs = model.hearing_aid_model.filter_taps.detach().numpy()
-    w, h = signal.freqz(coeffs, worN=n_fft)
-    freq_axes.append(w / (2 * pi) * samplerate)
-    spec_axes.append(h / max(h))
+            sf.write(
+                file=os.path.join(audio_path, "HI_out.wav"),
+                data=audio,
+                samplerate=samplerate,
+            )
+            audio = batch_2_np(out_NH)  # convert to np
+            audio = audio / max(np.abs(audio))  # normalize
+            sf.write(
+                file=os.path.join(audio_path, "NH_out.wav"),
+                data=audio,
+                samplerate=samplerate,
+            )
 
-    spec_axes.append(
-        spec_axes[1] * spec_axes[2]
-    )  # compensation spectrum multiplied with impaired spectrum
-    freq_axes.append(f)
+            freq_axes = []
+            spec_axes = []
+            time_signals = []
 
-    labels = [
-        "Normal Hearing",
-        "Impaired Hearing",
-        "Compensation filter",
-        "Result",
-    ]
+            for filter in model.normal_model.gamma_bank.filters:
+                h, f = utils.get_spectrum(filter.b, samplerate=samplerate)
+                freq_axes.append(f)
+                spec_axes.append(h)
+                time_signals.append(filter.b)
 
-    # Plot IR in time-domain and magnitude repsonse
-    plot.magspec(
-        freq_axes=freq_axes,
-        spec_axes=spec_axes,
-        labels=labels,
-        out_path=os.path.join(figs_path, "freq_responses.png"),
-        mode="dB",
-    )
-    plot.filter_taps(
-        amplitude_axes=[model.hearing_aid_model.filter_taps.detach().numpy()],
-        out_path=os.path.join(figs_path, "filter_taps.png"),
-        # units="Loss (dB)",
-    )
-    # * save metadata as pickle
-    save_list_as_pickle(
-        filename=os.path.join(f_path, "freq_axes.pkl"), data=freq_axes
-    )
-    save_list_as_pickle(
-        filename=os.path.join(f_path, "spec_axes.pkl"), data=spec_axes
-    )
+            for filter in model.impaired_model.gamma_bank.filters:
+                h, f = utils.get_spectrum(filter.b, samplerate=samplerate)
+                freq_axes.append(f)
+                spec_axes.append(h)
+                time_signals.append(filter.b)
 
-    # plot loss_curve
-    plot.timeseries(
-        amplitude_axes=[20 * np.log10(loss_curve)],
-        out_path=os.path.join(figs_path, "loss_curve.png"),
-        units="Loss (dB)",
-    )
-    # save data as pickle
-    save_list_as_pickle(
-        filename=os.path.join(f_path, "loss_curve.pkl"), data=loss_curve
-    )
+            n_fft = len(f)
+
+            # get learned FIR coefficients
+            coeffs = model.hearing_aid_model.filter_taps.detach().numpy()
+            w, h = signal.freqz(coeffs, worN=n_fft)
+            freq_axes.append(w / (2 * pi) * samplerate)
+            spec_axes.append(h / max(h))
+
+            spec_axes.append(
+                spec_axes[1] * spec_axes[2]
+            )  # compensation spectrum multiplied with impaired spectrum
+            freq_axes.append(f)
+
+            labels = [
+                "Normal Hearing",
+                "Impaired Hearing",
+                "Compensation filter",
+                "Result",
+            ]
+
+            plot.magspec(
+                freq_axes=freq_axes,
+                spec_axes=spec_axes,
+                labels=labels,
+                out_path=os.path.join(figs_path, "freq_responses.png"),
+                mode="dB",
+            )  # plot spectra
+            plot.filter_taps(
+                amplitude_axes=[model.hearing_aid_model.filter_taps.detach().numpy()],
+                out_path=os.path.join(figs_path, "filter_taps.png"),
+            )  # plot filter taps
+            plot.timeseries(
+                amplitude_axes=[np.log10(loss_curve)],
+                out_path=os.path.join(figs_path, "loss_curve.png"),
+                units="Log loss",
+            )  # plot loss curves
+            save_list_as_pickle(
+                filename=os.path.join(f_path, "freq_axes.pkl"), data=freq_axes
+            )  # save freq axes
+            save_list_as_pickle(
+                filename=os.path.join(f_path, "spec_axes.pkl"), data=spec_axes
+            )  # save spec data
+            save_list_as_pickle(
+                filename=os.path.join(f_path, "loss_curve.pkl"), data=loss_curve
+            )  # save data as pickle
+            save_list_as_pickle(
+                filename=os.path.join(f_path, "filter_taps.pkl"), data=coeffs
+            )  # save data as pickle

@@ -1,0 +1,10 @@
+{
+    "loss_type": "L1",
+    "overlap": 0.5,
+    "mag_weight": 1.0,
+    "delta_time_weight": 0.0,
+    "delta_freq_weight": 0.0,
+    "cumsum_freq_weight": 0.0,
+    "logmag_weight": 0.0,
+    "loudness_weight": 0.0
+}

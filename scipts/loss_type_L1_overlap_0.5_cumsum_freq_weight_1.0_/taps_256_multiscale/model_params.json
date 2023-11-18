@@ -1,0 +1,5 @@
+{
+    "band_width_factor": 5,
+    "taps": 256,
+    "epochs": 40000
+}

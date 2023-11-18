@@ -1,3 +1,4 @@
+# %%
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -144,6 +145,7 @@ def multi_scale_STFT_loss(
 
     return loss
 
+
 def spectral_loss(
     target_audio,
     estimate_audio,
@@ -179,7 +181,7 @@ def spectral_loss(
     """
     loss = 0.0
     batch_size, _, n_samples = estimate_audio.shape
-        
+
     # reshape audio signal for stft function
     target_audio = target_audio.reshape((batch_size, n_samples))
     estimate_audio = estimate_audio.reshape((batch_size, n_samples))
@@ -220,30 +222,27 @@ def spectral_loss(
             )
 
         if logmag_weight > 0:
-            target = torch.log(target_mag + 1e-6)
-            value = torch.log(estimate_mag + 1e-6)
+            target = torch.log10(target_mag + 1e-6)
+            value = torch.log10(estimate_mag + 1e-6)
             loss += logmag_weight * mean_difference(target, value, loss_type, weights)
     try:
         if loudness_weight > 0:
             target = compute_loudness(target, n_fft=2048)
             value = compute_loudness(estimate_audio, n_fft=2048)
             loss += loudness_weight * mean_difference(target, value, loss_type, weights)
-    except: 
+    except:
         pass
 
     return loss
 
 
-def mean_difference(target, value, loss_type, weights):
+def mean_difference(target, value, loss_type, weights=None):
     if loss_type == "L1":
         loss = torch.abs(target - value)
     elif loss_type == "L2":
         loss = (target - value).pow(2)
     elif loss_type == "COSINE":
-        target_norm = target.norm(dim=-1, keepdim=True)
-        value_norm = value.norm(dim=-1, keepdim=True)
-        similarity = torch.sum(target * value, dim=-1) / (target_norm * value_norm)
-        loss = 1 - similarity
+        loss = 1 - nn.CosineSimilarity(dim=1, eps=1e-6)(target,value)
     else:
         raise ValueError("Invalid loss_type. Use 'L1', 'L2', or 'COSINE'.")
 
@@ -253,5 +252,60 @@ def mean_difference(target, value, loss_type, weights):
     return loss.mean()
 
 
-def compute_loudness(audio, n_fft):
-    raise NotImplementedError
+import torch
+import torchaudio
+import librosa
+import numpy as np
+
+DB_RANGE = 120.0  # You can adjust this value based on your requirements
+
+
+def compute_loudness(
+    audio,
+    sample_rate=16000,
+    frame_rate=250,
+    n_fft=512,
+    range_db=DB_RANGE,
+    ref_db=0.0,
+    use_tf=True,
+    padding="center",
+):
+    # Make inputs tensors for PyTorch.
+    frame_size = n_fft
+    hop_size = sample_rate // frame_rate
+
+    if padding == "same":
+        audio = torchaudio.transforms.Resample(
+            orig_freq=sample_rate, new_freq=sample_rate + hop_size
+        )(audio)
+    elif padding == "valid":
+        audio = torchaudio.transforms.Resample(
+            orig_freq=sample_rate, new_freq=sample_rate - hop_size
+        )(audio)
+    elif padding == "center":
+        # Assuming the center padding is required.
+        audio_len = audio.shape[-1]
+        pad_len = (audio_len - frame_size) % hop_size
+        pad_left = pad_len // 2
+        pad_right = pad_len - pad_left
+        audio = torch.nn.functional.pad(audio, (pad_left, pad_right))
+
+    audio = audio.view(1, -1)  # Add a batch dimension.
+
+    # calc STFT
+    s = torchaudio.transforms.MelSpectrogram()(audio)
+    power = s.pow(2)
+
+    # A weighting
+    frequencies = librosa.fft_frequencies(sr=sample_rate, n_fft=n_fft)
+    a_weighting = librosa.A_weighting(frequencies)
+
+    # convert to linear scale
+    weighting = 10 ** (a_weighting / 10)
+    power = power * weighting
+
+    # average over frequency bins
+    avg_power = power.mean(dim=-1)
+    loudness = torchaudio.transforms.DB(ref=ref_db, top_db=range_db)(avg_power)
+
+    return loudness.view(-1)  # remove the batch dimension.

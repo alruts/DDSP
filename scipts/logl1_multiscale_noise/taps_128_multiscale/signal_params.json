@@ -1,0 +1,10 @@
+{
+    "samplerate": 8000,
+    "center_frequencies": [
+        1000
+    ],
+    "n_batch": 1,
+    "n_samples": 8000,
+    "n_channels": 1,
+    "signal_type": "noise_pulse"
+}
